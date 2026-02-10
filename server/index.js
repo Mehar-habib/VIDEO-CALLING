@@ -4,13 +4,14 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import ConnectDB from "./DB/dbConnect.js";
 import authRoute from "./routes/auth.route.js";
+import userRoute from "./routes/user.route.js";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const allowedOrigins = [""];
+const allowedOrigins = [process.env.FRONTEND_URL];
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -29,6 +30,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.use("/api/auth", authRoute);
+app.use("/api/user", userRoute);
 
 app.listen(PORT, async () => {
   await ConnectDB();
