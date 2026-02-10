@@ -76,7 +76,10 @@ io.on("connection", (socket) => {
   socket.on("callToUser", (data) => {
     const call = onlineUser.find((user) => user.userId === data.callToUserId);
     if (!call) {
-      socket.emit("userUnavailable", { message: `${call.name} is not online` });
+      socket.emit("userUnavailable", {
+        message: `${call?.name} is not online`,
+      });
+      return;
     }
     io.to(call.socketId).emit("callToUser", {
       signal: data.signalData,
@@ -84,6 +87,17 @@ io.on("connection", (socket) => {
       name: data.name,
       email: data.email,
       profilepic: data.profilepic,
+    });
+  });
+  socket.on("answeredCall", (data) => {
+    io.to(data.to).emit("callAccepted", {
+      signal: data.signal,
+      from: data.from,
+    });
+  });
+  socket.on("call-ended", (data) => {
+    io.to(data.to).emit("callEnded", {
+      name: data.name,
     });
   });
   socket.on("reject-call", (data) => {

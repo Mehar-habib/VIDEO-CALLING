@@ -2,7 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../../context/UserContentApi";
 import apiClient from "../../apiClient";
-import { FaTimes, FaSearch, FaPhoneAlt, FaPhoneSlash } from "react-icons/fa";
+import {
+  FaTimes,
+  FaSearch,
+  FaPhoneAlt,
+  FaPhoneSlash,
+  FaBars,
+  FaMicrophone,
+  FaMicrophoneSlash,
+  FaVideo,
+  FaVideoSlash,
+} from "react-icons/fa";
 import { RiLogoutBoxLine } from "react-icons/ri";
 import SocketContext from "../socket/SocketContext";
 import Peer from "simple-peer";
@@ -26,10 +36,13 @@ const Dashboard = () => {
   const [callAccepted, setCallAccepted] = useState(false);
   const [callRejectedPopUp, setCallRejectedPopUp] = useState(false);
   const [callRejectedUser, setCallRejectedUser] = useState(null);
+  const [isMicOn, setIsMicOn] = useState(true);
+  const [isCamOn, setIsCamOn] = useState(true);
 
   const hasJoined = useRef(false);
   const myVideo = useRef();
   const connectionRef = useRef();
+  const receiverVideo = useRef();
 
   const socket = SocketContext.getSocket();
   useEffect(() => {
@@ -46,6 +59,9 @@ const Dashboard = () => {
       setCaller(data);
       setCallerSignal(data.signal);
     });
+    socket.on("callEnded", (data) => {
+      endCallCleanup();
+    });
     socket.on("callRejected", (data) => {
       setCallRejectedPopUp(true);
       setCallRejectedUser(data);
@@ -53,9 +69,31 @@ const Dashboard = () => {
     return () => {
       socket.off("me");
       socket.off("online-users");
+      socket.off("callToUser");
+      socket.off("callEnded");
+      socket.off("callRejected");
     };
   }, [user, socket]);
 
+  const toggleMic = () => {
+    if (stream) {
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !isMicOn;
+        setIsMicOn(audioTrack.enabled);
+      }
+    }
+  };
+
+  const toggleCam = () => {
+    if (stream) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !isCamOn;
+        setIsCamOn(videoTrack.enabled);
+      }
+    }
+  };
   const allusers = async () => {
     try {
       setLoading(true);
@@ -96,6 +134,7 @@ const Dashboard = () => {
       });
       setIsSidebarOpen(false);
       setCallRejectedPopUp(false);
+      setSelectedUser(showReciverDetail._id);
       const peer = new Peer({
         initiator: true,
         trickle: false,
@@ -111,8 +150,21 @@ const Dashboard = () => {
           profilepic: user.profilepic,
         });
       });
-
+      peer.on("stream", (receiverStream) => {
+        if (receiverVideo.current) {
+          receiverVideo.current.srcObject = receiverStream;
+          receiverVideo.current.volume = 1.0;
+          receiverVideo.current.muted = false;
+        }
+      });
+      socket.once("callAccepted", (data) => {
+        setCallRejectedPopUp(false);
+        setCallAccepted(true);
+        setCaller(data.from);
+        peer.signal(data.signal);
+      });
       connectionRef.current = peer;
+      setShowReciverDetailPopUp(false);
     } catch (error) {
       console.error(error);
     }
@@ -130,6 +182,60 @@ const Dashboard = () => {
       u.email.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
+  const handelacceptCall = async () => {
+    try {
+      const currentStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      setStream(currentStream);
+      if (myVideo.current) {
+        myVideo.current.srcObject = currentStream;
+      }
+      currentStream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+      });
+      setCallAccepted(true);
+      setReceivingCall(true);
+      setIsSidebarOpen(false);
+
+      const peer = new Peer({
+        initiator: false,
+        trickle: false,
+        stream: currentStream,
+      });
+      peer.on("signal", (data) => {
+        socket.emit("answeredCall", {
+          signal: data,
+          from: me,
+          to: caller.from,
+        });
+      });
+      peer.on("stream", (remoteStram) => {
+        if (receiverVideo.current) {
+          receiverVideo.current.srcObject = remoteStram;
+          receiverVideo.current.volume = 1.0;
+          receiverVideo.current.muted = false;
+        }
+      });
+
+      if (callerSignal) peer.signal(callerSignal);
+      connectionRef.current = peer;
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handelendCall = () => {
+    socket.emit("call-ended", {
+      to: caller.from || selectedUser,
+      name: user.username,
+    });
+    endCallCleanup();
+  };
   const handelrejectCall = () => {
     setReceivingCall(false);
     setCallAccepted(false);
@@ -139,6 +245,28 @@ const Dashboard = () => {
       name: user.username,
       profilepic: user.profilepic,
     });
+  };
+
+  const endCallCleanup = () => {
+    if (stream) {
+      stream.getTracks().forEach((track) => {
+        track.stop();
+      });
+      if (receiverVideo.current) {
+        receiverVideo.current.srcObject = null;
+      }
+      if (myVideo.current) {
+        myVideo.current.srcObject = null;
+      }
+      connectionRef.current?.destroy();
+      setStream(null);
+      setReceivingCall(false);
+      setCallAccepted(false);
+      setSelectedUser(null);
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+    }
   };
 
   const handleLogout = async () => {
@@ -239,8 +367,13 @@ const Dashboard = () => {
       </aside>
 
       {/* Main Content Placeholder */}
-      {selectedUser ? (
-        <div className="relative w-full h-screen bg-black flex items-center justify-center">
+      {selectedUser || receivingCall || callAccepted ? (
+        <div className="">
+          <video
+            ref={receiverVideo}
+            autoPlay
+            className="absolute top-0 w-full h-full object-contain rounded-lg"
+          />
           <div className="absolute bottom-[75px] md:bottom-0 bg-gray-900 rounded-lg overflow-hidden shadow-lg">
             <video
               ref={myVideo}
@@ -248,6 +381,52 @@ const Dashboard = () => {
               playsInline
               className="w-32 h-40 md:w-56 object-cover rounded-lg"
             />
+          </div>
+          <div className="absolute top-4 left-4 text-white text-lg font-bold flex gap-2 items-center">
+            <button
+              type="button"
+              className="md:hidden text-2xl text-white cursor-pointer"
+              onClick={() => setIsSidebarOpen(true)}
+            >
+              <FaBars />
+            </button>
+            {caller?.username || "Caller"}
+          </div>
+
+          {/* Call Controls */}
+          <div className="absolute bottom-4 w-full flex justify-center gap-4">
+            <button
+              type="button"
+              className="bg-red-600 p-4 rounded-full text-white shadow-lg cursor-pointer"
+              onClick={handelendCall}
+            >
+              <FaPhoneSlash size={24} />
+            </button>
+            {/* 🎤 Toggle Mic */}
+            <button
+              type="button"
+              onClick={toggleMic}
+              className={`p-4 rounded-full text-white shadow-lg cursor-pointer transition-colors ${
+                isMicOn ? "bg-green-600" : "bg-red-600"
+              }`}
+            >
+              {isMicOn ? (
+                <FaMicrophone size={24} />
+              ) : (
+                <FaMicrophoneSlash size={24} />
+              )}
+            </button>
+
+            {/* 📹 Toggle Video */}
+            <button
+              type="button"
+              onClick={toggleCam}
+              className={`p-4 rounded-full text-white shadow-lg cursor-pointer transition-colors ${
+                isCamOn ? "bg-green-600" : "bg-red-600"
+              }`}
+            >
+              {isCamOn ? <FaVideo size={24} /> : <FaVideoSlash size={24} />}
+            </button>
           </div>
         </div>
       ) : (
@@ -316,7 +495,7 @@ const Dashboard = () => {
               <div className="flex gap-4 mt-5">
                 <button
                   type="button"
-                  // onClick={handelacceptCall}
+                  onClick={handelacceptCall}
                   className="bg-green-500 text-white px-4 py-1 rounded-lg w-28 flex gap-2 justify-center items-center"
                 >
                   Accept <FaPhoneAlt />
