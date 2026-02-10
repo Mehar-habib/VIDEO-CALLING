@@ -1,5 +1,6 @@
 import User from "../models/userSchema.js";
 import bcrypt from "bcryptjs";
+import jwtToken from "../utils/jwtToken.js";
 
 export const SignUp = async (req, res) => {
   try {
@@ -45,6 +46,48 @@ export const SignUp = async (req, res) => {
       .json({ success: true, message: "User created successfully" });
   } catch (error) {
     console.log(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const Login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User not found" });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid credentials" });
+    }
+    const token = jwtToken(user._id, res);
+    res.status(200).send({
+      _id: user._id,
+      fullname: user.fullname,
+      username: user.username,
+      email: user.email,
+      profilepic: user.profilepic,
+      token,
+      message: "Login successful",
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const Logout = async (req, res) => {
+  try {
+    res.clearCookie("jwt", {
+      httpOnly: true,
+      secure: true,
+      path: "/",
+    });
+  } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
