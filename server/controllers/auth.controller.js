@@ -87,6 +87,7 @@ export const Logout = async (req, res) => {
       secure: true,
       path: "/",
     });
+    res.status(200).json({ success: true, message: "Logout successful" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
