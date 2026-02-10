@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../../context/UserContentApi";
 import apiClient from "../../apiClient";
 import { FaTimes, FaSearch } from "react-icons/fa";
 import { RiLogoutBoxLine } from "react-icons/ri";
+import SocketContext from "../socket/SocketContext";
 
 const Dashboard = () => {
   const { user, updateUser } = useUser();
@@ -13,7 +14,28 @@ const Dashboard = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
+  const [me, setMe] = useState("");
+  const [onlineUsers, setOnlineUsers] = useState([]);
 
+  const hasJoined = useRef(false);
+
+  const socket = SocketContext.getSocket();
+  useEffect(() => {
+    if (user && socket && !hasJoined.current) {
+      socket.emit("join", { id: user._id, name: user.username });
+      hasJoined.currect = true;
+    }
+    socket.on("me", (id) => setMe(id));
+    socket.on("online-users", (onlineUser) => {
+      setOnlineUsers(onlineUser);
+    });
+    return () => {
+      socket.off("me");
+      socket.off("online-users");
+    };
+  }, [user, socket]);
+  console.log("onlineUsers", onlineUsers);
+  const isOnlineUser = (userId) => onlineUsers.some((u) => u.userId === userId);
   const allusers = async () => {
     try {
       setLoading(true);
@@ -45,6 +67,9 @@ const Dashboard = () => {
   const handleLogout = async () => {
     try {
       await apiClient.post("/auth/logout");
+      socket.off("disconnect");
+      socket.disconnect();
+      SocketContext.setSocket();
       updateUser(null);
       localStorage.removeItem("userData");
       navigate("/login");
@@ -102,11 +127,16 @@ const Dashboard = () => {
               }`}
               onClick={() => handelSelectedUser(u._id)}
             >
-              <img
-                src={u.profilepic || "/default-avatar.png"}
-                alt={u.username}
-                className="w-12 h-12 rounded-full border-2 border-gray-400"
-              />
+              <div className="relative">
+                <img
+                  src={u.profilepic || "/default-avatar.png"}
+                  alt={u.username}
+                  className="w-12 h-12 rounded-full border-2 border-gray-400"
+                />
+                {isOnlineUser(u._id) && (
+                  <span className="absolute top-0 right-0 w-3 h-3 bg-green-500 border-2 border-gray-800 rounded-full shadow-lg animate-bounce"></span>
+                )}
+              </div>
               <div className="flex flex-col truncate">
                 <span className="font-semibold text-white truncate">
                   {u.username}
