@@ -1,4 +1,5 @@
 import User from "../models/userSchema.js";
+import jwt from "jsonwebtoken";
 
 const isLogin = async (req, res, next) => {
   try {
