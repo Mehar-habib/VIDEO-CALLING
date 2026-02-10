@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../../context/UserContentApi";
 import apiClient from "../../apiClient";
-import { FaTimes, FaSearch } from "react-icons/fa";
+import { FaTimes, FaSearch, FaPhoneAlt, FaPhoneSlash } from "react-icons/fa";
 import { RiLogoutBoxLine } from "react-icons/ri";
 import SocketContext from "../socket/SocketContext";
+import Peer from "simple-peer";
 
 const Dashboard = () => {
   const { user, updateUser } = useUser();
@@ -16,26 +17,45 @@ const Dashboard = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [me, setMe] = useState("");
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [stream, setStream] = useState();
+  const [showReciverDetailPopUp, setShowReciverDetailPopUp] = useState(false);
+  const [showReciverDetail, setShowReciverDetail] = useState(null);
+  const [receivingCall, setReceivingCall] = useState(false);
+  const [caller, setCaller] = useState(null);
+  const [callerSignal, setCallerSignal] = useState(null);
+  const [callAccepted, setCallAccepted] = useState(false);
+  const [callRejectedPopUp, setCallRejectedPopUp] = useState(false);
+  const [callRejectedUser, setCallRejectedUser] = useState(null);
 
   const hasJoined = useRef(false);
+  const myVideo = useRef();
+  const connectionRef = useRef();
 
   const socket = SocketContext.getSocket();
   useEffect(() => {
     if (user && socket && !hasJoined.current) {
       socket.emit("join", { id: user._id, name: user.username });
-      hasJoined.currect = true;
+      hasJoined.current = true;
     }
     socket.on("me", (id) => setMe(id));
     socket.on("online-users", (onlineUser) => {
       setOnlineUsers(onlineUser);
+    });
+    socket.on("callToUser", (data) => {
+      setReceivingCall(true);
+      setCaller(data);
+      setCallerSignal(data.signal);
+    });
+    socket.on("callRejected", (data) => {
+      setCallRejectedPopUp(true);
+      setCallRejectedUser(data);
     });
     return () => {
       socket.off("me");
       socket.off("online-users");
     };
   }, [user, socket]);
-  console.log("onlineUsers", onlineUsers);
-  const isOnlineUser = (userId) => onlineUsers.some((u) => u.userId === userId);
+
   const allusers = async () => {
     try {
       setLoading(true);
@@ -54,8 +74,54 @@ const Dashboard = () => {
     allusers();
   }, []);
 
-  const handelSelectedUser = (userId) => {
-    setSelectedUser(userId);
+  const isOnlineUser = (userId) => onlineUsers.some((u) => u.userId === userId);
+
+  const startCall = async () => {
+    try {
+      const currentStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      setStream(currentStream);
+      if (myVideo.current) {
+        myVideo.current.srcObject = currentStream;
+        myVideo.current.muted = true;
+        myVideo.current.volume = 0;
+      }
+      currentStream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+      });
+      setIsSidebarOpen(false);
+      setCallRejectedPopUp(false);
+      const peer = new Peer({
+        initiator: true,
+        trickle: false,
+        stream: currentStream,
+      });
+      peer.on("signal", (data) => {
+        socket.emit("callToUser", {
+          callToUserId: showReciverDetail._id,
+          signalData: data,
+          from: me,
+          name: user.username,
+          email: user.email,
+          profilepic: user.profilepic,
+        });
+      });
+
+      connectionRef.current = peer;
+    } catch (error) {
+      console.error(error);
+    }
+  };
+  const handelSelectedUser = (user) => {
+    // const selected  = filteredUsers.find((u) => u._id === user._id);
+    setSelectedUser(user._id);
+    setShowReciverDetailPopUp(true);
+    setShowReciverDetail(user);
   };
 
   const filteredUsers = users.filter(
@@ -63,6 +129,17 @@ const Dashboard = () => {
       u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.email.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
+  const handelrejectCall = () => {
+    setReceivingCall(false);
+    setCallAccepted(false);
+
+    socket.emit("reject-call", {
+      to: caller.from,
+      name: user.username,
+      profilepic: user.profilepic,
+    });
+  };
 
   const handleLogout = async () => {
     try {
@@ -125,7 +202,7 @@ const Dashboard = () => {
               className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all duration-200 hover:bg-blue-600 ${
                 selectedUser === u._id ? "bg-blue-700" : "bg-gray-800"
               }`}
-              onClick={() => handelSelectedUser(u._id)}
+              onClick={() => handelSelectedUser(u)}
             >
               <div className="relative">
                 <img
@@ -162,14 +239,141 @@ const Dashboard = () => {
       </aside>
 
       {/* Main Content Placeholder */}
-      <main className="flex-1 ml-0 md:ml-64 p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">
-          Welcome, {user?.username || "User"}
-        </h2>
-        <p className="text-gray-600">
-          Select a user from the sidebar to start a chat or call.
-        </p>
-      </main>
+      {selectedUser ? (
+        <div className="relative w-full h-screen bg-black flex items-center justify-center">
+          <div className="absolute bottom-[75px] md:bottom-0 bg-gray-900 rounded-lg overflow-hidden shadow-lg">
+            <video
+              ref={myVideo}
+              autoPlay
+              playsInline
+              className="w-32 h-40 md:w-56 object-cover rounded-lg"
+            />
+          </div>
+        </div>
+      ) : (
+        <main className="flex-1 ml-0 md:ml-64 p-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">
+            Welcome, {user?.username || "User"}
+          </h2>
+          <p className="text-gray-600">
+            Select a user from the sidebar to start a chat or call.
+          </p>
+        </main>
+      )}
+
+      {/* call user popup */}
+      {showReciverDetailPopUp && showReciverDetail && (
+        <div className="fixed inset-0 bg-transparent bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+            <div className="flex flex-col items-center">
+              <p className="font-black text-xl mb-2">User Details</p>
+              <img
+                src={showReciverDetail.profilepic || "/default-avatar.png"}
+                alt="User"
+                className="w-20 h-20 rounded-full border-4 border-blue-500"
+              />
+              <h3 className="text-lg font-bold mt-3">
+                {showReciverDetail.username}
+              </h3>
+              <p className="text-sm text-gray-500">{showReciverDetail.email}</p>
+
+              <div className="flex gap-4 mt-5">
+                <button
+                  onClick={() => {
+                    setSelectedUser(showReciverDetail._id);
+                    startCall(); // function that handles media and calling
+                    setShowReciverDetailPopUp(false);
+                  }}
+                  className="bg-green-600 text-white px-4 py-1 rounded-lg w-28 flex items-center gap-2 justify-center"
+                >
+                  Call <FaPhoneAlt />
+                </button>
+                <button
+                  onClick={() => setShowReciverDetailPopUp(false)}
+                  className="bg-gray-400 text-white px-4 py-1 rounded-lg w-28"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* incoming call */}
+      {receivingCall && !callAccepted && (
+        <div className="fixed inset-0 bg-transparent bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+            <div className="flex flex-col items-center">
+              <p className="font-black text-xl mb-2">Call From...</p>
+              <img
+                src={caller?.profilepic || "/default-avatar.png"}
+                alt="Caller"
+                className="w-20 h-20 rounded-full border-4 border-green-500"
+              />
+              <h3 className="text-lg font-bold mt-3">{caller?.name}</h3>
+              <p className="text-sm text-gray-500">{caller?.email}</p>
+              <div className="flex gap-4 mt-5">
+                <button
+                  type="button"
+                  // onClick={handelacceptCall}
+                  className="bg-green-500 text-white px-4 py-1 rounded-lg w-28 flex gap-2 justify-center items-center"
+                >
+                  Accept <FaPhoneAlt />
+                </button>
+                <button
+                  type="button"
+                  onClick={handelrejectCall}
+                  className="bg-red-500 text-white px-4 py-2 rounded-lg w-28 flex gap-2 justify-center items-center"
+                >
+                  Reject <FaPhoneSlash />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* call rejection popup */}
+      {callRejectedPopUp && (
+        <div className="fixed inset-0 bg-transparent bg-opacity-30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+            <div className="flex flex-col items-center">
+              <p className="font-black text-xl mb-2">Call Rejected From...</p>
+              <img
+                src={callRejectedUser.profilepic || "/default-avatar.png"}
+                alt="Caller"
+                className="w-20 h-20 rounded-full border-4 border-green-500"
+              />
+              <h3 className="text-lg font-bold mt-3">
+                {callRejectedUser.name}
+              </h3>
+              <div className="flex gap-4 mt-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    startCall(); // function that handles media and calling
+                  }}
+                  className="bg-green-500 text-white px-4 py-1 rounded-lg w-28 flex gap-2 justify-center items-center"
+                >
+                  Call Again <FaPhoneAlt />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // endCallCleanup();
+                    setCallRejectedPopUp(false);
+                    setShowReciverDetailPopUp(false);
+                  }}
+                  className="bg-red-500 text-white px-4 py-2 rounded-lg w-28 flex gap-2 justify-center items-center"
+                >
+                  Back <FaPhoneSlash />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

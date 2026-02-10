@@ -10,9 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
+    "@esbuild-plugins/node-modules-polyfill": "^0.2.2",
     "@tailwindcss/vite": "^4.1.18",
     "axios": "^1.13.5",
     "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
     "events": "^3.3.0",
     "howler": "^2.2.4",
     "lottie-react": "^2.4.1",
@@ -25,7 +28,8 @@
     "simple-peer": "^9.11.1",
     "socket.io-client": "^4.8.3",
     "stream-browserify": "^3.0.0",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
+    "vite-plugin-node-polyfills": "^0.25.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

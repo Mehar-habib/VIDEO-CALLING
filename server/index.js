@@ -73,7 +73,25 @@ io.on("connection", (socket) => {
 
     io.emit("online-users", onlineUser);
   });
-
+  socket.on("callToUser", (data) => {
+    const call = onlineUser.find((user) => user.userId === data.callToUserId);
+    if (!call) {
+      socket.emit("userUnavailable", { message: `${call.name} is not online` });
+    }
+    io.to(call.socketId).emit("callToUser", {
+      signal: data.signalData,
+      from: data.from,
+      name: data.name,
+      email: data.email,
+      profilepic: data.profilepic,
+    });
+  });
+  socket.on("reject-call", (data) => {
+    io.to(data.to).emit("callRejected", {
+      name: data.name,
+      profilepic: data.profilepic,
+    });
+  });
   socket.on("disconnect", () => {
     const user = onlineUser.find((u) => u.socketId === socket.id);
     onlineUser = onlineUser.filter((u) => u.socketId !== socket.id);
