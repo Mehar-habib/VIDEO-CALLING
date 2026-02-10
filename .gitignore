@@ -1,0 +1,61 @@
+# =====================
+# Common
+# =====================
+node_modules/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =====================
+# server (Node / Express)
+# =====================
+server/node_modules/
+server/.env
+
+# Build output (if any)
+server/dist/
+server/build/
+
+# =====================
+# Frontend (React)
+# =====================
+frontend/node_modules/
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
+
+# React build
+frontend/build/
+frontend/dist/
+
+# =====================
+# Testing
+# =====================
+coverage/
+
+# =====================
+# Misc
+# =====================
+*.tgz
+*.zip
